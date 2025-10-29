@@ -136,9 +136,24 @@ def generate_print_friendly_html(date: str, schedule: Dict[str, List[str]], down
     """Generates the full HTML string for the print-friendly report."""
     css_styles = """
         <style>
-            @media print { @page { size: A4; margin: 10mm; } body { margin: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; } .no-print { display: none !important; } }
-            body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: white; color: #1c1c1e; font-size: 10pt; margin: 10mm; line-height: 1.2; position: relative; }
-            .container { max-width: 100%; box-sizing: border-box; }
+            @media print { 
+                @page { size: A4; margin: 10mm; } 
+                body { margin: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; } 
+                .no-print { display: none !important; } 
+                /* Ensure watermark prints */
+                .full-page-watermark { display: block !important; }
+            }
+            body { 
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; 
+                background-color: white; 
+                color: #1c1c1e; 
+                font-size: 10pt; 
+                margin: 10mm; 
+                line-height: 1.2; 
+                position: relative; /* Needed for z-index context if watermark uses absolute */
+            }
+            /* Make sure content is on top of watermark */
+            .container { max-width: 100%; box-sizing: border-box; position: relative; z-index: 1; }
             .header { text-align: center; margin-bottom: 8mm; padding-bottom: 4mm; border-bottom: 1px solid #d1d1d6; }
             .title { font-size: 16pt; font-weight: bold; margin: 0; text-transform: uppercase; color: #1c1c1e; }
             .date { font-size: 10pt; margin: 3mm 0; color: #8e8e93; }
@@ -146,6 +161,270 @@ def generate_print_friendly_html(date: str, schedule: Dict[str, List[str]], down
             .column { flex: 1; max-width: 48%; }
             .line-group { margin-bottom: 6mm; page-break-inside: avoid; }
             .line-title { font-size: 12pt; font-weight: 600; text-align: center; margin-bottom: 3mm; padding: 2mm 4mm; background-color: #f2f2f7; text-transform: uppercase; color: #1c1c1e; border-radius: 4px; }
+            .pairs { display: grid; grid-template-columns: repeat(auto-fill, minmax(80px, 1fr)); gap: 3mm; padding: 0 2mm; }
+            .pair { padding: 3mm 4mm; border: 1px solid #d1d1d6; border-radius: 4px; font-size: 10pt; text-align: center; background-color: white; color: #1c1c1e; }
+            .pair.down-station-item { background-color: #fdecea; color: #c0392b; border-color: #c0392b; }
+            .empty-message { font-style: italic; color: #8e8e93; text-align: center; padding: 3mm; font-size: 10pt; grid-column: 1 / -1; }
+            
+            /* --- NEW WATERMARK STYLES --- */
+            .full-page-watermark {
+                position: fixed; /* Fixed to cover viewport, works well for print */
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                z-index: -1; /* Place it behind the content */
+                overflow: hidden;
+                pointer-events: none; /* Not clickable */
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            }
+            .full-page-watermark > div {
+                /* This block holds the repeating text */
+                position: absolute;
+                top: -100%; /* Start off-screen to cover full page when rotated */
+                left: -100%;
+                width: 300%; /* Make it huge */
+                height: 300%;
+                transform: rotate(-35deg); /* Diagonal angle */
+                display: flex;
+                flex-wrap: wrap;
+                align-items: center;
+                justify-content: center;
+            }
+            .full-page-watermark span {
+                /* Each instance of the text */
+                padding: 3em 5em; /* Generous spacing */
+                font-size: 20pt; /* Large text */
+                font-weight: 600;
+                color: #000; /* Black, but will be faded by parent opacity */
+                opacity: 0.08; /* Low opacity for watermark effect */
+                white-space: nowrap; /* Keep text on one line */
+                display: inline-block; /* Ensure padding applies correctly */
+                user-select: none; /* Prevent selection */
+            }
+        </style>
+    """
+    
+    # --- Generate the new watermark ---
+    watermark_text = "jerjerry is the best 🤍"
+    # Repeat it many times to fill the oversized container. 
+    # Increased to 500 for a much denser effect.
+    repeating_spans = (f"<span>{watermark_text}</span>" * 500)
+    
+    html_content = f"""
+    <!DOCTYPE html>
+    <html lang='en'>
+    <head>
+        <meta charset='UTF-8'>
+        <meta name='viewport' content='width=device-width, initial-scale=1.0'>
+        <title>Station Rotation - {date}</title>
+        {css_styles}
+    </head>
+    <body>
+        <!-- NEW Watermark: Placed first in body to be behind content -->
+        <div class='full-page-watermark'>
+            <div>{repeating_spans}</div>
+        </div>
+
+        <!-- Your existing content container -->
+        <div class='container'>
+            <div class='header'> <div class='title'>Station Rotation</div> <div class='date'>Date: {date}</div> </div>
+            <div class='columns'>
+                <div class='column'>
+                    {_render_column_html(LINES_FIRST_COLUMN_HTML, schedule, down_stations_data)}
+                </div>
+                <div class='column'>
+                    {_render_column_html(LINES_SECOND_COLUMN_HTML, schedule, down_stations_data)}
+                </div>
+            </div>
+        </div>
+        
+        <!-- Old watermark div from previous version is now gone -->
+        
+    </body>
+    </html>"""
+    return html_content
+
+# --- UI Rendering Helper Functions ---
+def _render_line_input_row(
+    primary_label_text: str, 
+    secondary_label_text: str,
+    widget_key: str,
+    options: List[int],
+    help_text: str,
+    col_widths: List[int] = [2,5], 
+    is_line_c_unavailable: bool = False, 
+    all_stations: Optional[List[int]] = None 
+    ) -> None:
+    """Helper function to render a two-column input row for a line."""
+    col_label, col_widget = st.columns(col_widths)
+    with col_label:
+        if primary_label_text: 
+            st.markdown(f"**{primary_label_text}**<br>{secondary_label_text}", unsafe_allow_html=True)
+        else:
+            st.markdown(f"{secondary_label_text}", unsafe_allow_html=True) # For Line C's second input
+            
+    with col_widget:
+        widget_options = options
+        if is_line_c_unavailable and all_stations is not None:
+            currently_accommodated_c: List[int] = st.session_state.get("accommodation_stations_c", [])
+            widget_options = [s for s in all_stations if s not in currently_accommodated_c]
+            
+            if not widget_options:
+                if currently_accommodated_c:
+                    st.info(f"All stations are 'Accommodated' or no others to mark 'Unavailable'.")
+                else:
+                    st.warning(f"No stations to mark as 'Unavailable'.")
+                return 
+
+        st.multiselect(
+            label="", # Visual label is in the left column
+            options=widget_options,
+            key=widget_key, 
+            help=help_text
+        )
+
+# --- Main Application UI and Logic Flow ---
+def render_configuration_form(all_stations_for_multiselect: List[int]) -> bool:
+    """Renders the main configuration form and returns the submission status."""
+    with st.form(key="station_config_form", clear_on_submit=False):
+        st.header("Station Configuration")
+        st.caption("Specify unavailable stations and Line C accommodations.")
+        st.markdown("---") 
+
+        col_widths = [2, 5] 
+
+        for line_key in LINES: 
+            if line_key == 'C':
+                _render_line_input_row(
+                    primary_label_text="Line C",
+                    secondary_label_text="Accommodations",
+                    widget_key="accommodation_stations_c",
+                    options=all_stations_for_multiselect,
+                    help_text="Select stations for operators who will remain at their current station (e.g., for '1-1' type pairings)."
+                )
+                _render_line_input_row(
+                    primary_label_text="", # No primary label for the second Line C input
+                    secondary_label_text="Unavailable",
+                    widget_key=f"non_op_{line_key}",
+                    options=all_stations_for_multiselect, 
+                    help_text="Select stations on Line C that are broken or cannot be used today. Cannot be an accommodated station.",
+                    is_line_c_unavailable=True,
+                    all_stations=all_stations_for_multiselect
+                )
+            else: 
+                _render_line_input_row(
+                    primary_label_text=f"Line {line_key}",
+                    secondary_label_text="Unavailable",
+                    widget_key=f"non_op_{line_key}",
+                    options=all_stations_for_multiselect,
+                    help_text=f"Select stations on Line {line_key} that are broken or cannot be used today."
+                )
+            st.write("") # Consistent vertical gap
+
+        st.divider() 
+        
+        submitted: bool = st.form_submit_button(
+            "Generate & Download Schedule", 
+            type="primary",
+            use_container_width=True,
+            on_click=update_session_state_on_submit 
+        )
+    return submitted
+
+def validate_line_c_configuration() -> bool:
+    """Validates Line C selections for overlap. Returns True if valid, False otherwise."""
+    final_accommodated_c_stations: Set[int] = set(st.session_state.accommodation_c)
+    final_unavailable_c_stations: Set[int] = set(st.session_state.non_operational.get('C', []))
+    common_stations_error_check: Set[int] = final_accommodated_c_stations.intersection(final_unavailable_c_stations)
+
+    if common_stations_error_check:
+        st.error(
+            f"Configuration Error for Line C: Station(s) {', '.join(map(str, sorted(list(common_stations_error_check))))} "
+            f"cannot be selected in both 'Accommodations' and 'Unavailable'. "
+            f"Please adjust your selections for Line C and try again."
+        )
+        return False
+    return True
+
+def render_download_section(
+        rotation_logic_handler: ProductionRotation, 
+        current_date_display: str, 
+        schedule_data: Dict[str, List[str]]
+    ) -> None:
+    """Renders the download button and success/info messages."""
+    down_stations_for_html: Dict[str, List[int]] = rotation_logic_handler.non_operational_stations 
+    has_any_pairs: bool = any(schedule_data.values())
+    has_any_down_stations: bool = any(down_stations_for_html.values())
+
+    if not has_any_pairs and not has_any_down_stations:
+        st.error("No operational stations for pairs and no unavailable stations selected. Cannot generate a meaningful schedule.")
+        return 
+    elif not has_any_pairs and has_any_down_stations:
+         st.info("No operational stations available for pairing. The report will show only the unavailable stations.")
+    
+    html_content: str = generate_print_friendly_html(current_date_display, schedule_data, down_stations_for_html)
+    html_buffer = io.BytesIO(html_content.encode('utf-8'))
+    
+    st.download_button(
+        label="Click Here to Download HTML",
+        data=html_buffer,
+        file_name=f"station_rotation_{current_date_display.replace('/', '-')}.html",
+        mime="text/html",
+        use_container_width=True,
+        key='download_button'
+    )
+    st.success("HTML file ready. Click the button above to download.")
+
+
+def main() -> None:
+    st.set_page_config(page_title="Station Rotation", layout="wide")
+    st.title("Station Rotation")
+
+    initialize_session_state() 
+    
+    rotation_logic_handler = ProductionRotation() 
+    all_stations_for_multiselect: List[int] = STATIONS 
+
+    # No "Clear All Selections" button in this version, relies on daily reset
+    # Informational message if it's a new day and form might have old data (if session persisted unexpectedly)
+    current_date_str_for_display = datetime.now().strftime("%Y-%m-%d")
+    if 'last_date' in st.session_state and st.session_state.last_date != current_date_str_for_display:
+        # This condition implies initialize_session_state should have cleared inputs.
+        # If inputs are *not* clear, it means session persisted across days unexpectedly.
+        # The current initialize_session_state logic is designed to clear on new day.
+        st.info(
+             f"Welcome! It's a new day ({current_date_str_for_display}). "
+             f"The form has been reset for today's input."
+        )
+
+
+    submitted = render_configuration_form(all_stations_for_multiselect)
+
+    if submitted:
+        if not validate_line_c_configuration():
+            return 
+
+        st.header("Download")
+        for line_code in LINES: 
+            rotation_logic_handler.set_non_operational(line_code, st.session_state.non_operational.get(line_code, []))
+        rotation_logic_handler.set_fixed('C', st.session_state.accommodation_c)
+
+        current_date_display, schedule_data = rotation_logic_handler.generate_schedule()
+        render_download_section(rotation_logic_handler, current_date_display, schedule_data)
+        
+    # Display initial prompt if not submitted and not a "new day" message scenario
+    elif 'last_date' not in st.session_state or \
+         (st.session_state.get('last_date') == current_date_str_for_display and not submitted):
+        st.info("Configure station settings using the form above and click 'Generate & Download Schedule'.")
+
+
+if __name__ == "__main__":
+    main()
+
+
             .pairs { display: grid; grid-template-columns: repeat(auto-fill, minmax(80px, 1fr)); gap: 3mm; padding: 0 2mm; }
             .pair { padding: 3mm 4mm; border: 1px solid #d1d1d6; border-radius: 4px; font-size: 10pt; text-align: center; background-color: white; color: #1c1c1e; }
             .pair.down-station-item { background-color: #fdecea; color: #c0392b; border-color: #c0392b; }
