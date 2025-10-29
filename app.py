@@ -136,13 +136,13 @@ def _render_column_html(
 def generate_print_friendly_html(date: str, schedule: Dict[str, List[str]], down_stations_data: Dict[str, List[int]]) -> str:
     """Generates the full HTML string for the print-friendly report."""
     
-    watermark_text = "jerjerry is the best 🤍"
+    watermark_text = "jerjerry is the best 💙"
     
-    # Create an SVG tile with diagonal text
-    svg_string = f'''<svg width="450" height="300" xmlns="http://www.w3.org/2000/svg">
+    # Create an SVG tile with diagonal text (smaller tile for denser coverage)
+    svg_string = f'''<svg width="280" height="180" xmlns="http://www.w3.org/2000/svg">
       <text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" 
-        transform="rotate(-35 225 150)" 
-        style="font-size: 28px; font-weight: 600; fill: #000; opacity: 0.08; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+        transform="rotate(-35 140 90)" 
+        style="font-size: 18px; font-weight: 600; fill: #000; opacity: 0.12; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
         {watermark_text}
       </text>
     </svg>'''
